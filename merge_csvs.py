@@ -12,7 +12,8 @@ their headers:
 Per-market files in the wide format (one row per market) are converted to the
 tidy format automatically.
 
-    python merge_csvs.py                  # merges every CSV in the current folder
+    python merge_csvs.py                  # merges the CSVs in the current folder and in
+                                          # its "Per Market" and "NCR Summary" folders
     python merge_csvs.py a/*.csv b/*.csv  # or give specific files / wildcards
 
 Rows are sorted by date and exact duplicate rows are removed.
@@ -124,16 +125,19 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("files", nargs="*",
-                    help="CSV files (default: every .csv in the current folder)")
+                    help="CSV files (default: .csv files in the current folder and in "
+                         "its 'Per Market' and 'NCR Summary' folders)")
     ap.add_argument("-d", "--outdir", default=".", help="where to write the merged files")
     args = ap.parse_args()
 
     paths = []
-    for pat in args.files or ["*.csv"]:
+    default = ["*.csv", "Per Market/*.csv", "NCR Summary/*.csv"]
+    for pat in args.files or default:
         paths.extend(sorted(glob.glob(pat)) or [pat])
     paths = [p for p in dict.fromkeys(paths) if Path(p).name not in IGNORE]
     if not paths:
-        sys.exit("No CSV files found in this folder.")
+        sys.exit("No CSV files found in this folder or its 'Per Market' / "
+                 "'NCR Summary' folders.")
 
     data = {k: {"rows": [], "seen": set(), "dupes": 0, "files": 0} for k in OUTPUTS}
     skipped = []

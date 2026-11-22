@@ -2,9 +2,9 @@
 """
 Convert DA "Bantay Presyo" price monitoring PDFs into CSV files.
 
-Single / few files (creates two CSVs next to each PDF):
-    <name>.csv               per-market prices (Low/High per commodity)
-    <name>_ncr_summary.csv   NCR-wide Low / High / Prevailing / Average
+Outputs go into two folders, created in the current folder (or --outdir):
+    Per Market/<name>.csv                  per-market prices (Low/High per commodity)
+    NCR Summary/<name>_ncr_summary.csv     NCR-wide Low / High / Prevailing / Average
 
 Drag PDFs onto this file, or from a terminal:
     python pdf_to_csv.py a.pdf b.pdf
@@ -14,8 +14,8 @@ Drag PDFs onto this file, or from a terminal:
 
 Bulk mode (years of data): parallel, recursive, one combined file
     python pdf_to_csv.py --all -r --combine
-creates all_markets.csv and all_ncr_summary.csv (tidy format, ISO dates, sorted
-by date) instead of thousands of small CSVs. Add --also-individual to keep the
+creates Per Market/all_markets.csv and NCR Summary/all_ncr_summary.csv (tidy
+format, ISO dates, sorted by date) instead of thousands of small CSVs. Add --also-individual to keep the
 per-file CSVs too. --jobs N sets the number of worker processes.
 
 Requires:  pip install pdfplumber
@@ -47,6 +47,8 @@ SUM_RE = re.compile(
     r"^(?P<name>.+?)\s+(?P<nums>\d+(?:\.\d+)?\**(?:\s*-\s*\d+(?:\.\d+)?\**)?"
     r"(?:\s+\d+(?:\.\d+)?){1,2})(?:\s+[A-Za-z()]{1,8})?$")
 MARKET_PAGE_MARK = "COMMODITY (PHP/KG)"
+MARKET_DIR = "Per Market"          # output folder names
+SUMMARY_DIR = "NCR Summary"
 
 
 # ----------------------------------------------------------------- parsing
@@ -279,6 +281,9 @@ def main():
     ap.add_argument("-o", "--output", help="output CSV (only with a single PDF)")
     ap.add_argument("--all", action="store_true",
                     help="convert every PDF in the current folder")
+    ap.add_argument("--outdir", default=".",
+                    help="folder in which to create 'Per Market' and 'NCR Summary' "
+                         "(default: current folder)")
     ap.add_argument("-r", "--recursive", action="store_true",
                     help="with --all, also search subfolders")
     ap.add_argument("--combine", action="store_true",
@@ -318,10 +323,13 @@ def main():
     if args.output and len(args.pdfs) > 1:
         sys.exit("-o/--output can only be used with a single PDF.")
 
+    outdir = Path(args.outdir)
+    market_dir, summary_dir = outdir / MARKET_DIR, outdir / SUMMARY_DIR
+
     write_individual = (not args.combine) or args.also_individual
     pdfs = list(dict.fromkeys(args.pdfs))
     if args.skip_existing and write_individual and not args.combine:
-        keep = [p for p in pdfs if not Path(p).with_suffix(".csv").exists()]
+        keep = [p for p in pdfs if not (market_dir / (Path(p).stem + ".csv")).exists()]
         print(f"Skipping {len(pdfs) - len(keep)} already converted", file=sys.stderr)
         pdfs = keep
 
@@ -343,14 +351,16 @@ def main():
         for w in warnings:
             print(f"{tag}  ! {w}", file=sys.stderr)
         if write_individual:
-            out = args.output or str(Path(pdf).with_suffix(".csv"))
+            out = Path(args.output) if args.output else market_dir / (Path(pdf).stem + ".csv")
+            out.parent.mkdir(parents=True, exist_ok=True)
             if args.long:
                 write_rows(out, MARKET_LONG_HEADER,
                            market_long_rows(report_date, order, markets))
             else:
                 write_wide(out, report_date, order, markets)
             if srows and not args.no_summary:
-                sout = str(Path(out).with_name(Path(out).stem + "_ncr_summary.csv"))
+                summary_dir.mkdir(parents=True, exist_ok=True)
+                sout = summary_dir / (Path(pdf).stem + "_ncr_summary.csv")
                 write_rows(sout, SUMMARY_HEADER, summary_csv_rows(report_date, srows))
         if args.combine:
             key = (report_date, Path(pdf).name)
@@ -375,20 +385,24 @@ def main():
                 handle(fut.result(), n)
 
     if args.combine and (master_m or master_s):
-        out_dir = Path.cwd()
         if master_m:
             master_m.sort(key=lambda x: x[0])
-            write_rows(out_dir / "all_markets.csv", MARKET_LONG_HEADER + ["source_file"],
+            market_dir.mkdir(parents=True, exist_ok=True)
+            target = market_dir / "all_markets.csv"
+            write_rows(target, MARKET_LONG_HEADER + ["source_file"],
                        (r for _, rows in master_m for r in rows))
-            print(f"Wrote {out_dir / 'all_markets.csv'}", file=sys.stderr)
+            print(f"Wrote {target}", file=sys.stderr)
         if master_s:
             master_s.sort(key=lambda x: x[0])
-            write_rows(out_dir / "all_ncr_summary.csv", SUMMARY_HEADER + ["source_file"],
+            summary_dir.mkdir(parents=True, exist_ok=True)
+            target = summary_dir / "all_ncr_summary.csv"
+            write_rows(target, SUMMARY_HEADER + ["source_file"],
                        (r for _, rows in master_s for r in rows))
-            print(f"Wrote {out_dir / 'all_ncr_summary.csv'}", file=sys.stderr)
+            print(f"Wrote {target}", file=sys.stderr)
 
     if errors:
-        write_rows(Path.cwd() / "conversion_errors.csv", ["file", "error"], errors)
+        outdir.mkdir(parents=True, exist_ok=True)
+        write_rows(outdir / "conversion_errors.csv", ["file", "error"], errors)
         print(f"{failed} file(s) failed; listed in conversion_errors.csv", file=sys.stderr)
 
     print(f"\nDone: {done} converted, {failed} failed in {time.time() - start:.1f}s.",

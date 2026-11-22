@@ -4,12 +4,12 @@ Converts DA Bantay Presyo price monitoring PDFs (e.g. `Price-Monitoring-December
 
 ## What it produces
 
-Each PDF contains two kinds of data, so each PDF creates two CSV files next to it:
+Each PDF contains two kinds of data, so each PDF creates two CSV files, saved in two folders that are created in the folder you run the script from:
 
 | File | Contents |
 |------|----------|
-| `<name>.csv` | Per-market prices: one row per market, with **Low** and **High** columns for every commodity |
-| `<name>_ncr_summary.csv` | NCR-wide figures: **Low, High, Prevailing, Average** for every commodity (columns: `date`, `group`, `commodity`, `unit`, `low`, `high`, `prevailing`, `average`) |
+| `Per Market/<name>.csv` | Per-market prices: one row per market, with **Low** and **High** columns for every commodity |
+| `NCR Summary/<name>_ncr_summary.csv` | NCR-wide figures: **Low, High, Prevailing, Average** for every commodity (columns: `date`, `group`, `commodity`, `unit`, `low`, `high`, `prevailing`, `average`) |
 
 Notes on the data:
 - Dates are written as ISO dates (`2025-12-24`).
@@ -70,10 +70,10 @@ This uses every CPU core and writes two tidy files instead of thousands of small
 
 | File | Contents |
 |------|----------|
-| `all_markets.csv` | `date, market, commodity, unit, price_low, price_high, source_file` |
-| `all_ncr_summary.csv` | `date, group, commodity, unit, low, high, prevailing, average, source_file` |
+| `Per Market/all_markets.csv` | `date, market, commodity, unit, price_low, price_high, source_file` |
+| `NCR Summary/all_ncr_summary.csv` | `date, group, commodity, unit, low, high, prevailing, average, source_file` |
 
-Rows are sorted by date. Files that fail are listed in `conversion_errors.csv`. Because the tidy format has one row per commodity, it works even if the commodities or markets change between years (the wide per-PDF format would have different columns each time).
+Rows are sorted by date. Files that fail are listed in `conversion_errors.csv` (in the same place the folders are created). Because the tidy format has one row per commodity, it works even if the commodities or markets change between years (the wide per-PDF format would have different columns each time).
 
 Tips:
 - Try a handful of the oldest PDFs first to check the layout still parses, and read any `!` warnings.
@@ -85,7 +85,7 @@ Tips:
 
 Use `merge_csvs.py` when the PDFs were split between several people, or when you converted in separate batches.
 
-1. Collect everyone's CSVs into one folder. Rename them first so they don't overwrite each other, e.g. `alice_markets.csv` and `alice_summary.csv`.
+1. Collect everyone's CSVs into one folder. Rename them first so they don't overwrite each other, e.g. `alice_markets.csv` and `alice_summary.csv` (take them out of the `Per Market` and `NCR Summary` folders first, or they will all be called `all_markets.csv` / `all_ncr_summary.csv`).
 2. Put `merge_csvs.py` in that folder and run:
    ```
    python merge_csvs.py
@@ -102,6 +102,8 @@ What it accepts and does:
 - Rows are sorted by date, and exact duplicate rows are removed.
 - A file it can't use is reported as `SKIPPED` with the reason, and the rest still merge. `conversion_errors.csv` and anything that isn't a markets or summary file are ignored.
 
+By default it looks for CSVs in the current folder and in its `Per Market` and `NCR Summary` folders, so you can also run it in the folder where you converted the PDFs. Don't run it where both per-PDF CSVs and `all_*.csv` files exist for the same PDFs, or those rows will be counted twice.
+
 You can also pass specific files: `python merge_csvs.py a/*.csv b/*.csv`. Use `-d folder` to write the merged files somewhere else.
 
 ### Options for pdf_to_csv.py
@@ -116,9 +118,10 @@ You can also pass specific files: `python merge_csvs.py a/*.csv b/*.csv`. Use `-
 | `-j`, `--jobs N` | Number of worker processes (default: all CPU cores) |
 | `--long` | Per-PDF market CSV with one row per market and commodity instead of one row per market |
 | `--no-summary` | Skip the NCR-wide summary data |
-| `-o`, `--output` | Output file name (only with a single PDF) |
+| `-o`, `--output` | Output file name for the per-market CSV (only with a single PDF) |
+| `--outdir DIR` | Create the `Per Market` and `NCR Summary` folders in `DIR` instead of the current folder |
 
-Existing CSVs with the same name are overwritten.
+Existing CSVs with the same name are overwritten. Two PDFs with the same file name in different subfolders would overwrite each other's output.
 
 ## Troubleshooting
 
